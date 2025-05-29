@@ -1,0 +1,9 @@
+lxml
+openpyxl
+deep_translator
+selenium
+requests
+pandas
+bs4   
+fastapi
+uvicorn
