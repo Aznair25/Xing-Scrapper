@@ -1,47 +1,16 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+import os
+import time
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from bs4 import BeautifulSoup
-from deep_translator import GoogleTranslator
-from datetime import datetime
 import pandas as pd
+from .cookies import click_cookie_button
+from .translator import translate_in_chunks
+from bs4 import BeautifulSoup
 import requests
-import time
-import os
-import logging
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
-
-app = FastAPI()
-
-class ScrapeRequest(BaseModel):
-    url: str
-
-
-def click_cookie_button(driver):
-    script = """
-    const shadowHost = document.querySelector('#usercentrics-root');
-    if (!shadowHost || !shadowHost.shadowRoot) return false;
-    const acceptBtn = shadowHost.shadowRoot.querySelector('button[data-testid="uc-accept-all-button"]');
-    if (acceptBtn) {
-        acceptBtn.click();
-        return true;
-    }
-    return false;
-    """
-    return driver.execute_script(script)
-
-def translate_in_chunks(text, chunk_size=4900):
-    translated_text = ""
-    for i in range(0, len(text), chunk_size):
-        chunk = text[i:i + chunk_size]
-        translated_chunk = GoogleTranslator(source='auto', target='en').translate(chunk)
-        translated_text += translated_chunk + " "
-    return translated_text.strip()
+from .logger import logger
 
 def scrape_new_jobs(driver, seen_links, job_list, job_file):
     html_cont = driver.page_source
@@ -61,12 +30,12 @@ def scrape_new_jobs(driver, seen_links, job_list, job_file):
             logger.info(f"Processing job: {full_url}")
 
             position_0 = con.find('h2').text
-            position = GoogleTranslator(source='auto', target='en').translate(position_0)
+            position =translate_in_chunks(position_0) if position_0 else "N/A"
 
             city = con.find('p', class_='job-teaser-list-item-styles__City-sc-4c7b5190-6').text
             company = con.find('p', class_='job-teaser-list-item-styles__Company-sc-4c7b5190-7').text
             date_0 = con.find('p', class_='job-teaser-list-item-styles__Date-sc-4c7b5190-9').text
-            date = GoogleTranslator(source='auto', target='en').translate(date_0)
+            date = translate_in_chunks(date_0) if date_0 else "N/A"
 
             jd_html = requests.get(full_url).text
             jd_soup = BeautifulSoup(jd_html, 'lxml')
@@ -94,7 +63,7 @@ def scrape_new_jobs(driver, seen_links, job_list, job_file):
     else:
         logger.info("No new jobs in this round.")
 
-def start_scraping_session(url, job_file="Jobs.xlsx"):
+def start_scraping_session(url, job_file="data/jobs.xlsx"):
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')
     options.add_argument("window-size=1920,1080")
@@ -108,8 +77,7 @@ def start_scraping_session(url, job_file="Jobs.xlsx"):
     except Exception as e:
         logger.warning(f"❌ Could not accept cookies: {e}")
 
-    seen_links = set()
-    job_list = []
+    seen_links, job_list = set(), []
     if os.path.exists(job_file):
         df_existing = pd.read_excel(job_file)
         seen_links = set(df_existing['Link'].tolist())
@@ -133,14 +101,3 @@ def start_scraping_session(url, job_file="Jobs.xlsx"):
 
     driver.quit()
     logger.info("🎉 Scraping session completed.")
-
-
-@app.post("/scrape_jobs")
-def scrape_jobs(request: ScrapeRequest):
-    try:
-        logger.info(f"📡 Received scraping request for URL: {request.url}")
-        start_scraping_session(request.url)
-        return {"status": "success", "message": "Scraping completed successfully."}
-    except Exception as e:
-        logger.error(f"Unhandled error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
