@@ -39,7 +39,7 @@ def scrape_new_jobs(driver, seen_links, job_list, job_file):
 
             jd_html = requests.get(full_url).text
             jd_soup = BeautifulSoup(jd_html, 'lxml')
-            jd_element = jd_soup.find('div', class_='description-module__BlurWrapper-sc-4a74f755-2 CJPS')
+            jd_element = jd_soup.find('div', {"data-testid":"expandable-content"})
             jd = translate_in_chunks(jd_element.text) if jd_element else "N/A"
 
             job_list.append({
